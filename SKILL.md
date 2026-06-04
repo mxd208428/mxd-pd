@@ -82,17 +82,17 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 |------|------|
 | 标题编号格式 | 1理工类（1.→3.1→3.1.1） 2文史类（一、→（一）→1.→（1）） |
 | 一级标题字体 | 1黑体 2宋体 3仿宋 4楷体 |
-| 一级标题字号 | 1三号 2小三 3四号 |
+| 一级标题字号/加粗 | 1三号加粗 2三号不加粗 3小三加粗 4小三不加粗 |
 | 一级标题行距 | 1固定值24磅 2固定值28.8磅 3固定值20磅 4其他 |
 
-**第2组：二级+三级标题**（AskUserQuestion，4个问题）
+**第2组：二级+三级+四级标题**（AskUserQuestion，4个问题）
 
 | 问题 | 选项 |
 |------|------|
-| 二级标题字体 | 1黑体 2宋体 3仿宋 4楷体 |
-| 二级标题字号/加粗 | 1小三加粗 2小三不加粗 3四号加粗 4四号不加粗 |
-| 三级标题字体 | 1黑体 2宋体 3仿宋 4楷体 |
-| 三级标题字号/加粗 | 1四号加粗 2四号不加粗 3小四加粗 4小四不加粗 |
+| 二级标题字体/字号/加粗 | 1仿宋小三加粗 2仿宋四号加粗 3宋体四号加粗 4其他 |
+| 三级标题字体/字号/加粗 | 1仿宋四号加粗 2宋体小四加粗 3黑体四号加粗 4其他 |
+| 四级标题字体/字号/加粗 | 1仿宋小四加粗 2宋体小四加粗 3黑体小四加粗 4与正文相同 |
+| 首行缩进 | 1缩进2字符 2缩进0.74cm 3不缩进 4其他 |
 
 **第3组：正文格式**（AskUserQuestion，4个问题）
 
@@ -103,14 +103,23 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 正文行距 | 1固定值24磅 2固定值28.8磅 3固定值20磅 41.5倍行距 |
 | 英文/数字字体 | 1Times New Roman 2Arial 3与正文字体相同 |
 
-**第4组：摘要+参考文献+图表**（AskUserQuestion，4个问题）
+**第4组：摘要+关键词**（AskUserQuestion，4个问题）
 
 | 问题 | 选项 |
 |------|------|
-| 摘要标题字体/字号 | 1黑体小三 2黑体四号 3宋体小三 4宋体四号 |
-| 参考文献格式 | 1顺序编码+五号仿宋 2顺序编码+小五仿宋 3作者年份制+五号仿宋 4其他 |
+| 中文摘要标题字体/字号 | 1黑体三号 2黑体小三 3黑体四号 4宋体三号 |
+| 中文摘要内容字体/字号/行距 | 1仿宋四号28.8磅 2仿宋四号24磅 3宋体小四28.8磅 4与正文相同 |
+| 英文摘要标题字体/字号 | 1Times New Roman加粗三号 2Times New Roman加粗小三 3Arial加粗三号 4与中文摘要相同 |
+| 关键词格式 | 1"关键词"黑体加粗+内容仿宋 2"关键词"宋体加粗+内容宋体 3与正文相同 4其他 |
+
+**第5组：参考文献+图表+页边距**（AskUserQuestion，4个问题）
+
+| 问题 | 选项 |
+|------|------|
+| 参考文献编码方式 | 1顺序编码[1][2][3] 2作者-年份制 |
+| 参考文献正文字号 | 1五号仿宋 2小五仿宋 3五号宋体 4与正文相同 |
 | 图题/表题字体/字号 | 1五号宋体 2五号仿宋 3小五宋体 4与正文相同 |
-| 表格内容字体/字号 | 1五号宋体 2小五宋体 3五号仿宋 4与正文相同 |
+| 页边距 | 1上下2.54cm左右3.17cm 2上下2.5cm左右2.5cm 3自定义 |
 
 ### 情况C：用常见标准
 
@@ -256,6 +265,7 @@ fix_image_paragraphs(doc)
 
 # ========== 表格跨页断行处理 ==========
 # 长表格跨页时，可能需要设置跨页断行属性
+from docx.oxml import OxmlElement
 
 def set_table_allow_break(table):
     """允许表格跨页断行（防止表格被推到下一页导致大片空白）"""
@@ -379,9 +389,9 @@ def check_table_caption(doc):
     return missing_captions, table_nums
 
 def check_sequence(nums):
-    """检查序号是否连续，返回错误信息"""
+    """检查序号是否连续，返回错误信息列表（空列表表示无错误）"""
     if not nums:
-        return None, []
+        return []
     errors = []
     expected = list(range(1, len(nums) + 1))
     if nums != expected:
@@ -400,6 +410,49 @@ def generate_caption(context_texts, is_figure=True):
         return f"{text}示意图" if is_figure else f"{text}情况表"
     return f"{prefix}题待补充"
 
+def insert_paragraph_after(doc, para_index, text, font_name='宋体', font_size=Pt(10.5), bold=False, alignment=WD_ALIGN_PARAGRAPH.CENTER):
+    """在指定段落之后插入新段落"""
+    body = doc.element.body
+    # 创建新段落元素
+    new_para = OxmlElement('w:p')
+    # 创建run
+    new_run = OxmlElement('w:r')
+    new_rpr = OxmlElement('w:rPr')
+    # 设置字体
+    rFonts = OxmlElement('w:rFonts')
+    rFonts.set(qn('w:ascii'), font_name)
+    rFonts.set(qn('w:hAnsi'), font_name)
+    rFonts.set(qn('w:eastAsia'), font_name)
+    new_rpr.append(rFonts)
+    # 设置字号
+    sz = OxmlElement('w:sz')
+    sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # half-points
+    new_rpr.append(sz)
+    szCs = OxmlElement('w:szCs')
+    szCs.set(qn('w:val'), str(int(font_size.pt * 2)))
+    new_rpr.append(szCs)
+    # 设置加粗
+    if bold:
+        b = OxmlElement('w:b')
+        new_rpr.append(b)
+    new_run.append(new_rpr)
+    # 设置文本
+    new_t = OxmlElement('w:t')
+    new_t.text = text
+    new_run.append(new_t)
+    new_para.append(new_run)
+    # 设置对齐
+    new_ppr = OxmlElement('w:pPr')
+    new_jc = OxmlElement('w:jc')
+    jc_val = 'center' if alignment == WD_ALIGN_PARAGRAPH.CENTER else 'left'
+    new_jc.set(qn('w:val'), jc_val)
+    new_ppr.append(new_jc)
+    new_para.insert(0, new_ppr)
+    # 找到目标段落并插入
+    target_elem = doc.paragraphs[para_index]._element
+    target_elem.addnext(new_para)
+    return new_para
+
 def fix_figure_table_captions(doc, figure_format, table_format):
     """
     自动补全图序图题、表序表题，并修复序号
@@ -409,9 +462,6 @@ def fix_figure_table_captions(doc, figure_format, table_format):
         figure_format: 图题格式 {'font': '宋体', 'size': Pt(10.5), 'bold': False}
         table_format: 表题格式 {'font': '宋体', 'size': Pt(10.5), 'bold': False}
     """
-    from docx.shared import Pt
-    from copy import deepcopy
-
     # 1. 检查并修复图序图题
     missing_figures, figure_nums = check_figure_caption(doc)
     seq_errors_fig = check_sequence(figure_nums)
@@ -435,13 +485,16 @@ def fix_figure_table_captions(doc, figure_format, table_format):
                         run.text = ''
                     next_para.runs[0].text = new_text
                 else:
-                    # 插入新图题
+                    # 在图片段落之后插入新图题
                     context = get_context_text(doc, para_idx, 'before', 2)
                     caption_text = generate_caption(context, is_figure=True)
-                    new_para = doc.add_paragraph()
-                    new_para.text = f'图{fig_num} {caption_text}'
-                    # 移动到正确位置
-                    # (需要更复杂的XML操作来精确插入)
+                    insert_paragraph_after(
+                        doc, para_idx,
+                        f'图{fig_num} {caption_text}',
+                        font_name=figure_format.get('font', '宋体'),
+                        font_size=figure_format.get('size', Pt(10.5)),
+                        bold=figure_format.get('bold', False)
+                    )
 
     # 2. 检查并修复表序表题
     missing_tables, table_nums = check_table_caption(doc)
