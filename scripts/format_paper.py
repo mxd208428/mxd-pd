@@ -50,7 +50,7 @@ CONFIG = {
         "space_before": Pt(0),
         "space_after": Pt(0),
         "line_spacing": Pt(24),
-        "first_line_indent": Cm(0.74),  # 首行缩进2字符
+        "first_line_indent": Pt(24),  # 首行缩进2字符（小四号12pt × 2 = 24pt）
     },
     "table": {
         "font_cn": "宋体",
@@ -84,7 +84,7 @@ CONFIG = {
         "space_before": Pt(0),
         "space_after": Pt(0),
         "line_spacing": Pt(24),
-        "first_line_indent": Cm(0.74),
+        "first_line_indent": Pt(24),  # 首行缩进2字符
     },
     "reference": {
         "font_cn": "宋体",
@@ -291,6 +291,18 @@ def format_document(input_path, output_path):
 
 
 if __name__ == "__main__":
-    input_file = "13-毛小东-深度学习-第二次实验作业-实验报告-排版.docx"
-    output_file = "13-毛小东-深度学习-第二次实验作业-实验报告-已排版.docx"
+    import sys
+    if len(sys.argv) < 2:
+        print("用法: python format_paper.py 输入文件.docx [输出文件.docx]")
+        print("示例: python format_paper.py 论文.docx 论文_已排版.docx")
+        sys.exit(1)
+
+    input_file = sys.argv[1]
+    if len(sys.argv) >= 3:
+        output_file = sys.argv[2]
+    else:
+        # 默认在原文件名后加"_已排版"
+        name, ext = input_file.rsplit('.', 1)
+        output_file = f"{name}_已排版.{ext}"
+
     format_document(input_file, output_file)

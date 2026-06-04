@@ -92,7 +92,7 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 二级标题字体/字号/加粗 | 1仿宋小三加粗 2仿宋四号加粗 3宋体四号加粗 4其他 |
 | 三级标题字体/字号/加粗 | 1仿宋四号加粗 2宋体小四加粗 3黑体四号加粗 4其他 |
 | 四级标题字体/字号/加粗 | 1仿宋小四加粗 2宋体小四加粗 3黑体小四加粗 4与正文相同 |
-| 首行缩进 | 1缩进2字符 2缩进0.74cm 3不缩进 4其他 |
+| 首行缩进 | 1缩进2字符 2缩进1字符 3不缩进 4其他 |
 
 **第3组：正文格式**（AskUserQuestion，4个问题）
 
@@ -359,6 +359,15 @@ def check_figure_caption(doc):
 
     return missing_captions, figure_nums
 
+def get_paragraph_text(para_elem):
+    """从w:p元素中正确提取文本（文本在w:r/w:t中）"""
+    texts = []
+    for r_elem in para_elem.findall('.//' + qn('w:r')):
+        for t_elem in r_elem.findall(qn('w:t')):
+            if t_elem.text:
+                texts.append(t_elem.text)
+    return ''.join(texts)
+
 def check_table_caption(doc):
     """检查表格是否有表序表题，返回缺失列表"""
     table_positions = find_table_positions(doc)
@@ -373,7 +382,8 @@ def check_table_caption(doc):
         if tbl_pos > 0:
             prev_elem = body[tbl_pos - 1]
             if prev_elem.tag == qn('w:p'):
-                prev_text = prev_elem.text or ''
+                # 正确获取段落文本（文本在w:r/w:t中，不在p.text上）
+                prev_text = get_paragraph_text(prev_elem)
                 # 检查是否匹配"表X"或"表 X"格式
                 match = re.match(r'^表\s*(\d+)\s*', prev_text.strip())
                 if match:
