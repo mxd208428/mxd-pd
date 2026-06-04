@@ -62,6 +62,11 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 
 → 读取文件，提取格式要求
 
+**提取策略：**
+- 如果是Word文档：读取段落样式、字体、字号等格式信息
+- 如果是文本/PDF：通过关键词匹配提取格式要求（如"一级标题：黑体三号"）
+- 如果是表格形式：解析表格中的格式配置
+
 → 提取完成后，展示给用户确认：
 ```
 我从规范文件中提取到以下格式要求：
@@ -72,9 +77,11 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 是否正确？需要修改吗？
 ```
 
+→ 如果用户需要修改，进入情况B的交互式选择进行微调
+
 ### 情况B：用户口述要求
 
-分4组询问，每组用AskUserQuestion一次性展示4个问题，字体/字号/行距分开选：
+分5组询问，每组用AskUserQuestion一次性展示4个问题，字体/字号/行距分开选：
 
 **第1组：标题编号 + 一级标题**（AskUserQuestion，4个问题）
 
@@ -131,6 +138,8 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 
 → 应用对应的默认规范，展示给用户确认
 
+→ 如果用户需要微调部分格式（如改字体、字号），进入情况B的交互式选择进行调整
+
 ## 第四步：确认并执行
 
 展示最终规范摘要：
@@ -151,13 +160,22 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 
 用户确认后执行。
 
-## 第五步：执行
+## 第五步：询问输出路径
+
+```
+排版后的文件保存到哪里？
+1. 原文件名_已排版.docx（如：论文_已排版.docx）
+2. 覆盖原文件（谨慎！会丢失原格式）
+3. 自定义路径
+```
+
+## 第六步：执行
 
 ### 排版模式
 - 读取论文文件
 - 按规范逐段修改格式
 - **自动检测图表序号并补全图序图题/表序表题**
-- 生成新文件：`论文_已排版.docx`
+- 生成新文件（按用户选择的输出路径）
 - 输出修改摘要
 
 ### 检查模式
@@ -233,8 +251,8 @@ run.font.size = Pt(14)
 # 设置行距（固定值）
 paragraph.paragraph_format.line_spacing = Pt(24)
 
-# 设置首行缩进
-paragraph.paragraph_format.first_line_indent = Cm(0.74)
+# 设置首行缩进（2字符 = 字号 × 2，如四号14pt × 2 = 28pt）
+paragraph.paragraph_format.first_line_indent = Pt(28)  # 四号字缩进2字符
 
 # 设置加粗
 run.bold = True
@@ -342,9 +360,12 @@ def check_figure_caption(doc):
         # 检查图片下方是否有图序图题（通常是下一个段落）
         has_caption = False
         if para_idx + 1 < len(doc.paragraphs):
-            next_para = doc.paragraphs[para_idx + 1].text.strip()
+            # 正确获取段落文本（兼容XML中w:r/w:t格式）
+            next_para_elem = doc.paragraphs[para_idx + 1]._element
+            next_para_text = get_paragraph_text(next_para_elem) or doc.paragraphs[para_idx + 1].text
+            next_para_text = next_para_text.strip()
             # 检查是否匹配"图X"或"图 X"格式
-            match = re.match(r'^图\s*(\d+)\s*', next_para)
+            match = re.match(r'^图\s*(\d+)\s*', next_para_text)
             if match:
                 has_caption = True
                 figure_nums.append(int(match.group(1)))
@@ -413,12 +434,42 @@ def check_sequence(nums):
 def generate_caption(context_texts, is_figure=True):
     """根据上下文生成图题/表题"""
     prefix = "图" if is_figure else "表"
-    # 简单策略：取上下文中的关键词
-    if context_texts:
-        # 取最近的一段非空文本，截取前20字作为标题
-        text = context_texts[-1][:20]
-        return f"{text}示意图" if is_figure else f"{text}情况表"
-    return f"{prefix}题待补充"
+    if not context_texts:
+        return f"{prefix}题待补充"
+
+    # 取最近的上下文文本
+    text = context_texts[-1].strip()
+
+    # 去掉无意义的词
+    stop_words = ['的', '了', '在', '是', '有', '和', '与', '及', '等']
+    words = [w for w in text if w not in stop_words]
+
+    # 提取关键信息：取前15-25字作为基础
+    if len(words) > 25:
+        caption = ''.join(words[:25])
+    elif len(words) > 15:
+        caption = ''.join(words)
+    else:
+        caption = text[:20]
+
+    # 根据类型添加后缀
+    if is_figure:
+        # 检测是否有特定类型关键词
+        if any(kw in text for kw in ['流程', '步骤', '过程']):
+            return f"{caption}流程图"
+        elif any(kw in text for kw in ['架构', '结构', '框架']):
+            return f"{caption}架构图"
+        elif any(kw in text for kw in ['对比', '比较']):
+            return f"{caption}对比图"
+        else:
+            return f"{caption}示意图"
+    else:
+        if any(kw in text for kw in ['统计', '数据', '结果']):
+            return f"{caption}统计表"
+        elif any(kw in text for kw in ['对比', '比较']):
+            return f"{caption}对比表"
+        else:
+            return f"{caption}情况表"
 
 def insert_paragraph_after(doc, para_index, text, font_name='宋体', font_size=Pt(10.5), bold=False, alignment=WD_ALIGN_PARAGRAPH.CENTER):
     """在指定段落之后插入新段落"""
@@ -454,7 +505,14 @@ def insert_paragraph_after(doc, para_index, text, font_name='宋体', font_size=
     # 设置对齐
     new_ppr = OxmlElement('w:pPr')
     new_jc = OxmlElement('w:jc')
-    jc_val = 'center' if alignment == WD_ALIGN_PARAGRAPH.CENTER else 'left'
+    # 处理所有对齐方式
+    alignment_map = {
+        WD_ALIGN_PARAGRAPH.CENTER: 'center',
+        WD_ALIGN_PARAGRAPH.LEFT: 'left',
+        WD_ALIGN_PARAGRAPH.RIGHT: 'right',
+        WD_ALIGN_PARAGRAPH.JUSTIFY: 'both',
+    }
+    jc_val = alignment_map.get(alignment, 'left')
     new_jc.set(qn('w:val'), jc_val)
     new_ppr.append(new_jc)
     new_para.insert(0, new_ppr)
