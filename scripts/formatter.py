@@ -369,6 +369,13 @@ def format_document(doc, config):
         if not first_heading_seen and section_type == "body":
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             paragraph.paragraph_format.first_line_indent = Cm(0)
+            # 清除可能残留的 firstLineChars
+            pPr = paragraph._element.find(qn('w:pPr'))
+            if pPr is not None:
+                ind = pPr.find(qn('w:ind'))
+                if ind is not None:
+                    if ind.get(qn('w:firstLineChars')) is not None:
+                        del ind.attrib[qn('w:firstLineChars')]
             # 保持原字体大小，只统一字体
             for run in paragraph.runs:
                 cn = "宋体"
@@ -416,9 +423,18 @@ def format_document(doc, config):
                 body_cfg["first_line_indent"] = Pt(0)
                 format_paragraph(paragraph, body_cfg)
 
-                # 删除可能残留的 numPr
+                # 彻底清除缩进（Pt(0) 不会清除 firstLineChars）
                 pPr = paragraph._element.find(qn('w:pPr'))
                 if pPr is not None:
+                    ind = pPr.find(qn('w:ind'))
+                    if ind is not None:
+                        # 清除 firstLineChars
+                        if ind.get(qn('w:firstLineChars')) is not None:
+                            del ind.attrib[qn('w:firstLineChars')]
+                        # 清除 firstLine
+                        if ind.get(qn('w:firstLine')) is not None:
+                            del ind.attrib[qn('w:firstLine')]
+                    # 删除 numPr
                     numPr = pPr.find(qn('w:numPr'))
                     if numPr is not None:
                         pPr.remove(numPr)
