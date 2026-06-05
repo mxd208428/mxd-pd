@@ -56,34 +56,13 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 
 ### 情况A：用户有规范文件
 
-```
-请提供排版规范文件路径：
-```
-
-→ 读取文件，提取格式要求
-
-**提取策略：**
-- 如果是Word文档：读取段落样式、字体、字号等格式信息
-- 如果是文本/PDF：通过关键词匹配提取格式要求（如"一级标题：黑体三号"）
-- 如果是表格形式：解析表格中的格式配置
-
-→ 提取完成后，展示给用户确认：
-```
-我从规范文件中提取到以下格式要求：
-- 一级标题：xxx
-- 二级标题：xxx
-- 正文：xxx
-...
-是否正确？需要修改吗？
-```
-
-→ 如果用户需要修改，进入情况B的交互式选择进行微调
+读取文件，提取格式要求。提取完成后展示给用户确认，如果需要修改则进入情况B。
 
 ### 情况B：用户口述要求
 
-分5组询问，每组用AskUserQuestion一次性展示4个问题，字体/字号/行距分开选：
+分5组询问，每组用AskUserQuestion一次性展示4个问题：
 
-**第1组：标题编号 + 一级标题**（AskUserQuestion，4个问题）
+**第1组：标题编号 + 一级标题**
 
 | 问题 | 选项 |
 |------|------|
@@ -92,7 +71,7 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 一级标题字号/加粗 | 1三号加粗 2三号不加粗 3小三加粗 4小三不加粗 |
 | 一级标题行距 | 1固定值24磅 2固定值28.8磅 3固定值20磅 4其他 |
 
-**第2组：二级+三级+四级标题**（AskUserQuestion，4个问题）
+**第2组：二级+三级+四级标题**
 
 | 问题 | 选项 |
 |------|------|
@@ -101,7 +80,7 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 四级标题字体/字号/加粗 | 1仿宋小四加粗 2宋体小四加粗 3黑体小四加粗 4与正文相同 |
 | 首行缩进 | 1缩进2字符 2缩进1字符 3不缩进 4其他 |
 
-**第3组：正文格式**（AskUserQuestion，4个问题）
+**第3组：正文格式**
 
 | 问题 | 选项 |
 |------|------|
@@ -110,7 +89,7 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 正文行距 | 1固定值24磅 2固定值28.8磅 3固定值20磅 41.5倍行距 |
 | 英文/数字字体 | 1Times New Roman 2Arial 3与正文字体相同 |
 
-**第4组：摘要+关键词**（AskUserQuestion，4个问题）
+**第4组：摘要+关键词**
 
 | 问题 | 选项 |
 |------|------|
@@ -119,7 +98,7 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 英文摘要标题字体/字号 | 1Times New Roman加粗三号 2Times New Roman加粗小三 3Arial加粗三号 4与中文摘要相同 |
 | 关键词格式 | 1"关键词"黑体加粗+内容仿宋 2"关键词"宋体加粗+内容宋体 3与正文相同 4其他 |
 
-**第5组：参考文献+图表+页边距**（AskUserQuestion，4个问题）
+**第5组：参考文献+图表+页边距**
 
 | 问题 | 选项 |
 |------|------|
@@ -136,29 +115,11 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 2. 文史体艺类（一、 → （一） → 1. → （1））
 ```
 
-→ 应用对应的默认规范，展示给用户确认
-
-→ 如果用户需要微调部分格式（如改字体、字号），进入情况B的交互式选择进行调整
+→ 应用对应的默认规范，展示给用户确认。如需微调则进入情况B。
 
 ## 第四步：确认并执行
 
-展示最终规范摘要：
-
-```
-排版规范确认：
-━━━━━━━━━━━━━━
-论文文件：xxx.docx
-操作类型：排版 / 检查
-标题格式：理工类 / 文史类
-一级标题：三号黑体
-二级标题：小三仿宋加粗
-正文：四号仿宋，行距24磅
-...
-━━━━━━━━━━━━━━
-确认无误？开始执行？
-```
-
-用户确认后执行。
+展示最终规范摘要，用户确认后执行。
 
 ## 第五步：询问输出路径
 
@@ -169,50 +130,69 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 3. 自定义路径
 ```
 
-## 第六步：执行
+## 第六步：执行排版
 
-### 排版模式
-- 读取论文文件
-- 按规范逐段修改格式
-- **自动检测图表序号并补全图序图题/表序表题**
-- 生成新文件（按用户选择的输出路径）
-- 输出修改摘要
+### 执行方式
 
-### 检查模式
-- 读取论文文件
-- 对照规范逐项检查
-- **检测图表序号是否连续、是否有图序图题**
-- 输出问题清单（带行号和具体问题）
+使用 Python 脚本执行排版。脚本位于 `scripts/` 目录下，采用模块化结构：
 
-### 图表序号机制（自动处理）
-
-**功能：**
-1. **检测缺失**：图片没有图序图题、表格没有表序表题时，自动补全
-2. **序号检查**：检测图1、图2、图3...是否连续，表1、表2、表3...是否连续
-3. **自动修复**：序号不连续时重新编号，缺失标题时根据上下文生成
-
-**处理流程：**
 ```
-1. 遍历文档，找到所有图片和表格
-2. 检查每个图片/表格是否有对应的图序图题/表序表题
-3. 检查序号是否连续（不跳号、不重复、不乱序）
-4. 对于缺失标题的图表：
-   - 读取上下文段落内容
-   - 分析图表主题
-   - 生成简洁准确的图题/表题
-5. 对于序号错误的图表：
-   - 按出现顺序重新编号
+scripts/
+├── format_paper.py     # 主入口
+├── config.py           # 配置模块（字号表、默认规范）
+├── validator.py        # 文件验证与安全保存
+├── formatter.py        # 核心排版逻辑
+├── captions.py         # 图表序号检查与报告
+├── ai_traces.py        # AI痕迹清除
+├── three_line_table.py # 三线表转换
+└── checker.py          # 格式检查
 ```
 
-**图序图题格式：**
-- 位置：图片正下方居中
-- 格式：`图1 图题内容`（图序与图题之间空一格）
-- 字体：按用户选择的图题格式
+### 排版模式命令
 
-**表序表题格式：**
-- 位置：表格正上方居中
-- 格式：`表1 表题内容`（表序与表题之间空一格）
-- 字体：按用户选择的表题格式
+```bash
+# 基本排版
+python scripts/format_paper.py 论文.docx
+
+# 指定输出路径
+python scripts/format_paper.py 论文.docx -o 输出.docx
+
+# 使用文史类规范
+python scripts/format_paper.py 论文.docx --preset arts
+
+# 使用自定义配置
+python scripts/format_paper.py 论文.docx --config my_config.json
+
+# 启用自动功能 + 图表序号检查
+python scripts/format_paper.py 论文.docx --fix-captions --remove-ai --three-line
+
+# 覆盖原文件
+python scripts/format_paper.py 论文.docx --overwrite
+```
+
+### 检查模式命令
+
+```bash
+python scripts/format_paper.py 论文.docx --check
+```
+
+### 排版模式功能
+
+- 按规范逐段修改格式（标题、正文、摘要、参考文献）
+- 检测图表序号，报告缺失的图题/表题（`--fix-captions`，只报告不自动插入）
+- 自动消除AI痕迹（`--remove-ai`）
+- 自动转换表格为三线表（`--three-line`）
+- 统一文字颜色为黑色
+- 图片段落行距自动修复（防止图片显示不全）
+- 设置页边距
+
+### 检查模式功能
+
+- 对照规范逐项检查字体、字号、行距、缩进
+- 检测图表序号是否连续
+- 检测缺失的图序图题/表序表题
+- 检测非黑色文字
+- 输出带位置说明的问题清单
 
 ## 常见字号对照
 
@@ -231,361 +211,34 @@ description: "论文排版skill。当用户需要对论文进行排版、检查�
 | 五号 | 10.5pt |
 | 小五 | 9pt |
 
-## Python工具参考
+## 自动处理机制说明
 
-```python
-from docx import Document
-from docx.shared import Pt, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-from docx.oxml.ns import qn
+### 图片行距修复
+固定行距会导致嵌入式图片显示不全，脚本自动将图片段落设为单倍行距。
 
-doc = Document('论文.docx')
+### 图表序号检测
+- 检测图片是否有图序图题（图1 xxx）
+- 检测表格是否有表序表题（表1 xxx）
+- 检查序号是否连续
+- 根据上下文自动生成缺失的标题
 
-# 设置中文字体（需同时设置ascii和eastAsia）
-run.font.name = 'Times New Roman'
-run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
+### 三线表规范
+- 只有三条线：顶线1.5pt、表头下线0.75pt、底线1.5pt
+- 无竖线，表头居中
+- 表头跨页时重复显示
 
-# 设置字号
-run.font.size = Pt(14)
+### AI痕迹清除
+- 删除项目符号（•·■◆●★▶等）
+- 删除列表符号（①②③❶❷❸等）
+- 删除"一是...二是..."格式
+- 替换AI常用表达（"本文旨在"→"本文主要"等）
+- 保留原始格式（加粗、斜体等）
 
-# 设置行距（固定值）
-paragraph.paragraph_format.line_spacing = Pt(24)
+## 错误处理
 
-# 设置首行缩进（2字符 = 字号 × 2，如四号14pt × 2 = 28pt）
-paragraph.paragraph_format.first_line_indent = Pt(28)  # 四号字缩进2字符
-
-# 设置加粗
-run.bold = True
-
-# 设置对齐
-paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 居中
-paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY  # 两端对齐
-
-# ========== 图片段落行距处理（重要！） ==========
-# 固定行距会导致嵌入式图片显示不全，图片段落需设为单倍行距
-from docx.oxml.ns import qn
-
-def has_image(paragraph):
-    """检查段落是否包含图片"""
-    return bool(paragraph._element.findall('.//' + qn('wp:inline')) +
-                paragraph._element.findall('.//' + qn('wp:anchor')))
-
-def fix_image_paragraphs(doc):
-    """将所有包含图片的段落设为单倍行距"""
-    for para in doc.paragraphs:
-        if has_image(para):
-            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
-            # 或者设为固定值，值略大于图片高度
-            # para.paragraph_format.line_spacing = Pt(图片高度+10)
-
-# 使用示例
-fix_image_paragraphs(doc)
-
-# ========== 表格跨页断行处理 ==========
-# 长表格跨页时，可能需要设置跨页断行属性
-from docx.oxml import OxmlElement
-
-def set_table_allow_break(table):
-    """允许表格跨页断行（防止表格被推到下一页导致大片空白）"""
-    tbl = table._tbl
-    tblPr = tbl.tblPr
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        tbl.insert(0, tblPr)
-    # 设置 cantSplit 为 false（允许断行）
-    for tr in tbl.tr_elements:
-        trPr = tr.get_or_add_trPr()
-        cantSplit = trPr.find(qn('w:cantSplit'))
-        if cantSplit is not None:
-            trPr.remove(cantSplit)
-
-def set_table_header_repeat(table):
-    """设置表头在跨页时重复显示（三线表常用）"""
-    # 只对第一行设置
-    if table.rows:
-        tr = table.rows[0]._tr
-        trPr = tr.get_or_add_trPr()
-        tblHeader = OxmlElement('w:tblHeader')
-        trPr.append(tblHeader)
-
-# 使用示例
-for table in doc.tables:
-    set_table_allow_break(table)
-    set_table_header_repeat(table)  # 可选：表头跨页重复
-
-# ========== 图表序号检测与自动补全 ==========
-import re
-from docx.shared import Pt
-
-def find_image_paragraphs(doc):
-    """找到所有包含图片的段落及其索引"""
-    image_paras = []
-    for i, para in enumerate(doc.paragraphs):
-        if has_image(para):
-            image_paras.append((i, para))
-    return image_paras
-
-def find_table_positions(doc):
-    """找到所有表格的位置（在段落列表中的插入点）"""
-    table_positions = []
-    # 表格在XML中与段落同级，需要通过body元素遍历
-    body = doc.element.body
-    for i, child in enumerate(body):
-        if child.tag == qn('w:tbl'):
-            table_positions.append(i)
-    return table_positions
-
-def get_context_text(doc, para_index, direction='before', count=3):
-    """获取指定段落的上下文文本"""
-    texts = []
-    if direction == 'before':
-        start = max(0, para_index - count)
-        for i in range(start, para_index):
-            if doc.paragraphs[i].text.strip():
-                texts.append(doc.paragraphs[i].text.strip())
-    elif direction == 'after':
-        end = min(len(doc.paragraphs), para_index + count + 1)
-        for i in range(para_index + 1, end):
-            if doc.paragraphs[i].text.strip():
-                texts.append(doc.paragraphs[i].text.strip())
-    return texts
-
-def check_figure_caption(doc):
-    """检查图片是否有图序图题，返回缺失列表"""
-    image_paras = find_image_paragraphs(doc)
-    missing_captions = []
-    figure_nums = []
-
-    for i, (para_idx, para) in enumerate(image_paras):
-        # 检查图片下方是否有图序图题（通常是下一个段落）
-        has_caption = False
-        if para_idx + 1 < len(doc.paragraphs):
-            # 正确获取段落文本（兼容XML中w:r/w:t格式）
-            next_para_elem = doc.paragraphs[para_idx + 1]._element
-            next_para_text = get_paragraph_text(next_para_elem) or doc.paragraphs[para_idx + 1].text
-            next_para_text = next_para_text.strip()
-            # 检查是否匹配"图X"或"图 X"格式
-            match = re.match(r'^图\s*(\d+)\s*', next_para_text)
-            if match:
-                has_caption = True
-                figure_nums.append(int(match.group(1)))
-
-        if not has_caption:
-            context = get_context_text(doc, para_idx, 'before', 2)
-            missing_captions.append({
-                'para_index': para_idx,
-                'context': context,
-                'has_caption': False
-            })
-
-    return missing_captions, figure_nums
-
-def get_paragraph_text(para_elem):
-    """从w:p元素中正确提取文本（文本在w:r/w:t中）"""
-    texts = []
-    for r_elem in para_elem.findall('.//' + qn('w:r')):
-        for t_elem in r_elem.findall(qn('w:t')):
-            if t_elem.text:
-                texts.append(t_elem.text)
-    return ''.join(texts)
-
-def check_table_caption(doc):
-    """检查表格是否有表序表题，返回缺失列表"""
-    table_positions = find_table_positions(doc)
-    missing_captions = []
-    table_nums = []
-
-    for i, tbl_pos in enumerate(table_positions):
-        # 检查表格上方是否有表序表题（通常是前一个段落）
-        has_caption = False
-        # 找到表格前的段落
-        body = doc.element.body
-        if tbl_pos > 0:
-            prev_elem = body[tbl_pos - 1]
-            if prev_elem.tag == qn('w:p'):
-                # 正确获取段落文本（文本在w:r/w:t中，不在p.text上）
-                prev_text = get_paragraph_text(prev_elem)
-                # 检查是否匹配"表X"或"表 X"格式
-                match = re.match(r'^表\s*(\d+)\s*', prev_text.strip())
-                if match:
-                    has_caption = True
-                    table_nums.append(int(match.group(1)))
-
-        if not has_caption:
-            missing_captions.append({
-                'table_index': i,
-                'has_caption': False
-            })
-
-    return missing_captions, table_nums
-
-def check_sequence(nums):
-    """检查序号是否连续，返回错误信息列表（空列表表示无错误）"""
-    if not nums:
-        return []
-    errors = []
-    expected = list(range(1, len(nums) + 1))
-    if nums != expected:
-        for i, (actual, exp) in enumerate(zip(nums, expected)):
-            if actual != exp:
-                errors.append(f"第{i+1}个应为{exp}，实际为{actual}")
-    return errors
-
-def generate_caption(context_texts, is_figure=True):
-    """根据上下文生成图题/表题"""
-    prefix = "图" if is_figure else "表"
-    if not context_texts:
-        return f"{prefix}题待补充"
-
-    # 取最近的上下文文本
-    text = context_texts[-1].strip()
-
-    # 去掉无意义的词
-    stop_words = ['的', '了', '在', '是', '有', '和', '与', '及', '等']
-    words = [w for w in text if w not in stop_words]
-
-    # 提取关键信息：取前15-25字作为基础
-    if len(words) > 25:
-        caption = ''.join(words[:25])
-    elif len(words) > 15:
-        caption = ''.join(words)
-    else:
-        caption = text[:20]
-
-    # 根据类型添加后缀
-    if is_figure:
-        # 检测是否有特定类型关键词
-        if any(kw in text for kw in ['流程', '步骤', '过程']):
-            return f"{caption}流程图"
-        elif any(kw in text for kw in ['架构', '结构', '框架']):
-            return f"{caption}架构图"
-        elif any(kw in text for kw in ['对比', '比较']):
-            return f"{caption}对比图"
-        else:
-            return f"{caption}示意图"
-    else:
-        if any(kw in text for kw in ['统计', '数据', '结果']):
-            return f"{caption}统计表"
-        elif any(kw in text for kw in ['对比', '比较']):
-            return f"{caption}对比表"
-        else:
-            return f"{caption}情况表"
-
-def insert_paragraph_after(doc, para_index, text, font_name='宋体', font_size=Pt(10.5), bold=False, alignment=WD_ALIGN_PARAGRAPH.CENTER):
-    """在指定段落之后插入新段落"""
-    body = doc.element.body
-    # 创建新段落元素
-    new_para = OxmlElement('w:p')
-    # 创建run
-    new_run = OxmlElement('w:r')
-    new_rpr = OxmlElement('w:rPr')
-    # 设置字体
-    rFonts = OxmlElement('w:rFonts')
-    rFonts.set(qn('w:ascii'), font_name)
-    rFonts.set(qn('w:hAnsi'), font_name)
-    rFonts.set(qn('w:eastAsia'), font_name)
-    new_rpr.append(rFonts)
-    # 设置字号
-    sz = OxmlElement('w:sz')
-    sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # half-points
-    new_rpr.append(sz)
-    szCs = OxmlElement('w:szCs')
-    szCs.set(qn('w:val'), str(int(font_size.pt * 2)))
-    new_rpr.append(szCs)
-    # 设置加粗
-    if bold:
-        b = OxmlElement('w:b')
-        new_rpr.append(b)
-    new_run.append(new_rpr)
-    # 设置文本
-    new_t = OxmlElement('w:t')
-    new_t.text = text
-    new_run.append(new_t)
-    new_para.append(new_run)
-    # 设置对齐
-    new_ppr = OxmlElement('w:pPr')
-    new_jc = OxmlElement('w:jc')
-    # 处理所有对齐方式
-    alignment_map = {
-        WD_ALIGN_PARAGRAPH.CENTER: 'center',
-        WD_ALIGN_PARAGRAPH.LEFT: 'left',
-        WD_ALIGN_PARAGRAPH.RIGHT: 'right',
-        WD_ALIGN_PARAGRAPH.JUSTIFY: 'both',
-    }
-    jc_val = alignment_map.get(alignment, 'left')
-    new_jc.set(qn('w:val'), jc_val)
-    new_ppr.append(new_jc)
-    new_para.insert(0, new_ppr)
-    # 找到目标段落并插入
-    target_elem = doc.paragraphs[para_index]._element
-    target_elem.addnext(new_para)
-    return new_para
-
-def fix_figure_table_captions(doc, figure_format, table_format):
-    """
-    自动补全图序图题、表序表题，并修复序号
-
-    参数:
-        doc: Document对象
-        figure_format: 图题格式 {'font': '宋体', 'size': Pt(10.5), 'bold': False}
-        table_format: 表题格式 {'font': '宋体', 'size': Pt(10.5), 'bold': False}
-    """
-    # 1. 检查并修复图序图题
-    missing_figures, figure_nums = check_figure_caption(doc)
-    seq_errors_fig = check_sequence(figure_nums)
-
-    if missing_figures or seq_errors_fig:
-        print(f"发现 {len(missing_figures)} 个图片缺失图序图题")
-        if seq_errors_fig:
-            print(f"图序错误: {seq_errors_fig}")
-
-        # 重新编号所有图片
-        image_paras = find_image_paragraphs(doc)
-        for i, (para_idx, para) in enumerate(image_paras):
-            fig_num = i + 1
-            # 检查下方是否已有图题
-            if para_idx + 1 < len(doc.paragraphs):
-                next_para = doc.paragraphs[para_idx + 1]
-                if re.match(r'^图\s*\d+\s*', next_para.text.strip()):
-                    # 更新序号
-                    new_text = re.sub(r'^图\s*\d+', f'图{fig_num}', next_para.text)
-                    for run in next_para.runs:
-                        run.text = ''
-                    next_para.runs[0].text = new_text
-                else:
-                    # 在图片段落之后插入新图题
-                    context = get_context_text(doc, para_idx, 'before', 2)
-                    caption_text = generate_caption(context, is_figure=True)
-                    insert_paragraph_after(
-                        doc, para_idx,
-                        f'图{fig_num} {caption_text}',
-                        font_name=figure_format.get('font', '宋体'),
-                        font_size=figure_format.get('size', Pt(10.5)),
-                        bold=figure_format.get('bold', False)
-                    )
-
-    # 2. 检查并修复表序表题
-    missing_tables, table_nums = check_table_caption(doc)
-    seq_errors_tbl = check_sequence(table_nums)
-
-    if missing_tables or seq_errors_tbl:
-        print(f"发现 {len(missing_tables)} 个表格缺失表序表题")
-        if seq_errors_tbl:
-            print(f"表序错误: {seq_errors_tbl}")
-
-    return {
-        'missing_figures': len(missing_figures),
-        'missing_tables': len(missing_tables),
-        'figure_seq_errors': seq_errors_fig,
-        'table_seq_errors': seq_errors_tbl
-    }
-
-# 使用示例
-figure_format = {'font': '宋体', 'size': Pt(10.5), 'bold': False}
-table_format = {'font': '宋体', 'size': Pt(10.5), 'bold': False}
-result = fix_figure_table_captions(doc, figure_format, table_format)
-print(f"缺失图题: {result['missing_figures']}个")
-print(f"缺失表题: {result['missing_tables']}个")
-
-doc.save('论文_已排版.docx')
-```
+脚本会自动检查：
+- 文件是否存在
+- 文件是否为 .docx 格式
+- 文件是否损坏
+- 文件是否被占用
+- 输出目录是否可写

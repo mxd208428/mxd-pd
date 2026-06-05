@@ -1,308 +1,119 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""论文排版脚本"""
+"""论文排版主入口脚本
+
+用法:
+    python format_paper.py 论文.docx                    # 排版模式
+    python format_paper.py 论文.docx -o 输出.docx       # 指定输出路径
+    python format_paper.py 论文.docx --check             # 检查模式
+    python format_paper.py 论文.docx --preset arts       # 使用文史类规范
+    python format_paper.py 论文.docx --config my.json    # 使用自定义配置
+    python format_paper.py 论文.docx --three-line        # 转换三线表
+    python format_paper.py 论文.docx --remove-ai         # 清除AI痕迹
+    python format_paper.py 论文.docx --fix-captions      # 补全图表序号
+"""
+
+import argparse
+import sys
+import os
+
+# 确保 scripts 目录在 path 中（支持直接运行）
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from docx import Document
-from docx.shared import Pt, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
-import copy
-import re
-
-# 排版规范配置
-CONFIG = {
-    "heading1": {
-        "font_cn": "黑体",
-        "font_en": "Times New Roman",
-        "size": Pt(15),  # 小三
-        "bold": False,
-        "alignment": WD_ALIGN_PARAGRAPH.LEFT,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-    },
-    "heading2": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(14),  # 四号
-        "bold": False,
-        "alignment": WD_ALIGN_PARAGRAPH.LEFT,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-    },
-    "heading3": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(12),  # 小四
-        "bold": False,
-        "alignment": WD_ALIGN_PARAGRAPH.LEFT,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-    },
-    "body": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(12),  # 小四
-        "bold": False,
-        "alignment": WD_ALIGN_PARAGRAPH.JUSTIFY,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-        "first_line_indent": Pt(24),  # 首行缩进2字符（小四号12pt × 2 = 24pt）
-    },
-    "table": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(10.5),  # 五号
-        "alignment": WD_ALIGN_PARAGRAPH.CENTER,
-        "line_spacing": Pt(24),
-    },
-    "figure_caption": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(10.5),  # 五号
-        "alignment": WD_ALIGN_PARAGRAPH.CENTER,
-        "line_spacing": Pt(24),
-    },
-    "abstract_title": {
-        "font_cn": "黑体",
-        "font_en": "Times New Roman",
-        "size": Pt(14),  # 四号
-        "bold": False,
-        "alignment": WD_ALIGN_PARAGRAPH.CENTER,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-    },
-    "abstract_body": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(12),  # 小四
-        "alignment": WD_ALIGN_PARAGRAPH.JUSTIFY,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-        "first_line_indent": Pt(24),  # 首行缩进2字符
-    },
-    "reference": {
-        "font_cn": "宋体",
-        "font_en": "Times New Roman",
-        "size": Pt(10.5),  # 五号
-        "alignment": WD_ALIGN_PARAGRAPH.JUSTIFY,
-        "space_before": Pt(0),
-        "space_after": Pt(0),
-        "line_spacing": Pt(24),
-    },
-}
+from scripts.config import load_config
+from scripts.validator import validate_docx_file, safe_save_document, generate_output_path
+from scripts.formatter import format_document, format_summary_text
+from scripts.captions import check_all_captions, format_caption_report
+from scripts.ai_traces import remove_ai_traces
+from scripts.three_line_table import convert_all_tables_to_three_line
+from scripts.checker import check_format, format_check_report
 
 
-def set_run_font(run, font_cn, font_en, size, bold=False):
-    """设置run的字体"""
-    # 设置英文字体
-    run.font.name = font_en
-    run.font.size = size
-    run.bold = bold
+def main():
+    parser = argparse.ArgumentParser(
+        description='论文排版工具',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument('input', help='输入 .docx 文件路径')
+    parser.add_argument('-o', '--output', help='输出文件路径（默认: 原文件名_已排版.docx）')
+    parser.add_argument('--check', action='store_true', help='检查模式（只报告问题，不修改）')
+    parser.add_argument('--preset', choices=['science', 'arts'], help='使用预设规范（science=理工类, arts=文史类）')
+    parser.add_argument('--config', help='自定义配置文件路径（JSON 格式）')
+    parser.add_argument('--three-line', action='store_true', help='将所有表格转换为三线表')
+    parser.add_argument('--remove-ai', action='store_true', help='清除AI痕迹')
+    parser.add_argument('--fix-captions', action='store_true', help='检查图表序号（只报告缺失，不自动插入）')
+    parser.add_argument('--overwrite', action='store_true', help='覆盖已有文件')
 
-    # 设置中文字体
-    r = run._element
-    rPr = r.find(qn('w:rPr'))
-    if rPr is None:
-        rPr = r.makeelement(qn('w:rPr'), {})
-        r.insert(0, rPr)
+    args = parser.parse_args()
 
-    rFonts = rPr.find(qn('w:rFonts'))
-    if rFonts is None:
-        rFonts = rPr.makeelement(qn('w:rFonts'), {})
-        rPr.insert(0, rFonts)
+    # 1. 验证输入文件
+    is_valid, errors = validate_docx_file(args.input)
+    if not is_valid:
+        print("❌ 文件验证失败:")
+        for error in errors:
+            print(f"   - {error}")
+        sys.exit(1)
 
-    rFonts.set(qn('w:eastAsia'), font_cn)
-    rFonts.set(qn('w:ascii'), font_en)
-    rFonts.set(qn('w:hAnsi'), font_en)
+    # 2. 加载配置
+    config = load_config(config_path=args.config, preset=args.preset)
 
+    # 3. 打开文档
+    try:
+        doc = Document(args.input)
+    except Exception as e:
+        print(f"❌ 无法打开文档: {e}")
+        sys.exit(1)
 
-def set_paragraph_format(paragraph, config):
-    """设置段落格式"""
-    pf = paragraph.paragraph_format
-    pf.space_before = config.get("space_before", Pt(0))
-    pf.space_after = config.get("space_after", Pt(0))
-    pf.line_spacing = config.get("line_spacing", Pt(24))
-    pf.alignment = config.get("alignment", WD_ALIGN_PARAGRAPH.JUSTIFY)
+    # 4. 检查模式
+    if args.check:
+        result = check_format(doc, config)
+        report = format_check_report(result)
+        print(report)
+        sys.exit(0)
 
-    first_indent = config.get("first_line_indent")
-    if first_indent:
-        pf.first_line_indent = first_indent
+    # 5. 排版模式 — 按需执行各功能
+    actions_performed = []
+
+    # 图表序号检查
+    if args.fix_captions:
+        caption_result = check_all_captions(doc)
+        caption_report = format_caption_report(caption_result)
+        print(caption_report)
+
+    # AI痕迹清除
+    if args.remove_ai:
+        doc, ai_count = remove_ai_traces(doc)
+        actions_performed.append(f"AI痕迹清除: 修改{ai_count}个段落")
+
+    # 三线表转换
+    if args.three_line:
+        tbl_count = convert_all_tables_to_three_line(doc)
+        actions_performed.append(f"三线表转换: {tbl_count}个表格")
+
+    # 主排版（始终执行）
+    doc, summary = format_document(doc, config)
+    actions_performed.append("格式排版完成")
+
+    # 6. 保存
+    output_path = args.output or generate_output_path(args.input)
+    success, result = safe_save_document(doc, output_path, overwrite=args.overwrite)
+
+    if success:
+        print("✅ 排版完成！")
+        print(f"   输出文件: {result}")
+        print()
+        print(format_summary_text(summary))
+        if actions_performed:
+            print()
+            print("执行的操作:")
+            for action in actions_performed:
+                print(f"  - {action}")
     else:
-        pf.first_line_indent = Cm(0)
-
-
-def format_paragraph(paragraph, config):
-    """格式化整个段落"""
-    set_paragraph_format(paragraph, config)
-
-    for run in paragraph.runs:
-        set_run_font(
-            run,
-            config["font_cn"],
-            config["font_en"],
-            config["size"],
-            config.get("bold", False)
-        )
-
-
-def format_table(table, config):
-    """格式化表格"""
-    for row in table.rows:
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.paragraph_format.line_spacing = config["line_spacing"]
-                paragraph.paragraph_format.space_before = Pt(0)
-                paragraph.paragraph_format.space_after = Pt(0)
-                paragraph.alignment = config["alignment"]
-
-                for run in paragraph.runs:
-                    set_run_font(
-                        run,
-                        config["font_cn"],
-                        config["font_en"],
-                        config["size"],
-                    )
-
-
-def is_figure_caption(text):
-    """判断是否是图注"""
-    patterns = [
-        r'^图\s*\d+[-\.]\d+',
-        r'^Figure\s*\d+',
-        r'^Fig\.\s*\d+',
-    ]
-    for pattern in patterns:
-        if re.match(pattern, text.strip()):
-            return True
-    return False
-
-
-def is_table_caption(text):
-    """判断是否是表注"""
-    patterns = [
-        r'^表\s*\d+[-\.]\d+',
-        r'^Table\s*\d+',
-    ]
-    for pattern in patterns:
-        if re.match(pattern, text.strip()):
-            return True
-    return False
-
-
-def is_reference(text):
-    """判断是否是参考文献条目"""
-    patterns = [
-        r'^\[\d+\]',
-        r'^\d+\.\s+[A-Z]',  # 1. Author...
-    ]
-    for pattern in patterns:
-        if re.match(pattern, text.strip()):
-            return True
-    return False
-
-
-def format_document(input_path, output_path):
-    """主排版函数"""
-    doc = Document(input_path)
-
-    # 跟踪是否在参考文献部分
-    in_references = False
-
-    for i, paragraph in enumerate(doc.paragraphs):
-        text = paragraph.text.strip()
-
-        # 跳过空段落
-        if not text:
-            continue
-
-        # 检查样式
-        style_name = paragraph.style.name if paragraph.style else ""
-
-        # 标题页元素（段落1-6左右）
-        if i < 7 and style_name == "Normal":
-            # 标题页内容，保持原样居中
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in paragraph.runs:
-                if "深度学习" in text or "作业" in text:
-                    set_run_font(run, "黑体", "Times New Roman", Pt(22), True)
-                elif "提交时间" in text:
-                    set_run_font(run, "宋体", "Times New Roman", Pt(14))
-                else:
-                    set_run_font(run, "宋体", "Times New Roman", Pt(14))
-            continue
-
-        # 一级标题
-        if style_name == "Heading 1" or style_name.startswith("Heading 1"):
-            format_paragraph(paragraph, CONFIG["heading1"])
-
-            # 检查是否进入参考文献部分
-            if "参考文献" in text:
-                in_references = True
-
-            continue
-
-        # 二级标题
-        if style_name == "Heading 2" or style_name.startswith("Heading 2"):
-            format_paragraph(paragraph, CONFIG["heading2"])
-            continue
-
-        # 三级标题
-        if style_name == "Heading 3" or style_name.startswith("Heading 3"):
-            format_paragraph(paragraph, CONFIG["heading3"])
-            continue
-
-        # 参考文献条目
-        if in_references and is_reference(text):
-            format_paragraph(paragraph, CONFIG["reference"])
-            paragraph.paragraph_format.first_line_indent = Cm(0)
-            continue
-
-        # 图注
-        if is_figure_caption(text):
-            format_paragraph(paragraph, CONFIG["figure_caption"])
-            continue
-
-        # 表注（通常在表格内，但以防万一）
-        if is_table_caption(text):
-            format_paragraph(paragraph, CONFIG["figure_caption"])
-            continue
-
-        # 摘要标题
-        if "摘要" in text and len(text) < 10:
-            format_paragraph(paragraph, CONFIG["abstract_title"])
-            continue
-
-        # 普通正文
-        format_paragraph(paragraph, CONFIG["body"])
-
-    # 格式化表格
-    for table in doc.tables:
-        format_table(table, CONFIG["table"])
-
-    # 保存
-    doc.save(output_path)
-    print(f"排版完成！已保存到: {output_path}")
+        print(f"❌ 保存失败: {result}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("用法: python format_paper.py 输入文件.docx [输出文件.docx]")
-        print("示例: python format_paper.py 论文.docx 论文_已排版.docx")
-        sys.exit(1)
-
-    input_file = sys.argv[1]
-    if len(sys.argv) >= 3:
-        output_file = sys.argv[2]
-    else:
-        # 默认在原文件名后加"_已排版"
-        name, ext = input_file.rsplit('.', 1)
-        output_file = f"{name}_已排版.{ext}"
-
-    format_document(input_file, output_file)
+    main()
