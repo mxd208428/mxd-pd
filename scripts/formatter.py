@@ -58,19 +58,32 @@ def set_paragraph_format(paragraph, config):
         # 支持 "2char" 格式（首行缩进2字符，相对于字号自动计算）
         if isinstance(first_indent, str) and first_indent.endswith("char"):
             chars = int(first_indent.replace("char", ""))
+            target_val = str(chars * 100)
             pPr = paragraph._element.find(qn('w:pPr'))
             if pPr is None:
                 pPr = OxmlElement('w:pPr')
                 paragraph._element.insert(0, pPr)
             ind = pPr.find(qn('w:ind'))
+            # 检查当前值：已经是目标值则跳过，已经是空（无缩进）也跳过
+            if ind is not None:
+                current_chars = ind.get(qn('w:firstLineChars'))
+                current_fixed = ind.get(qn('w:firstLine'))
+                if current_chars == target_val:
+                    return  # 已经是目标值
+                if current_chars is None and (current_fixed is None or current_fixed == '0'):
+                    return  # 已经是无缩进，不覆盖
             if ind is None:
                 ind = OxmlElement('w:ind')
                 pPr.append(ind)
-            ind.set(qn('w:firstLineChars'), str(chars * 100))
+            ind.set(qn('w:firstLineChars'), target_val)
             # 移除固定 firstLine 值，让 Word 按字号自动计算
             if ind.get(qn('w:firstLine')) is not None:
                 del ind.attrib[qn('w:firstLine')]
         else:
+            # 已经是目标值则跳过
+            current = pf.first_line_indent
+            if current is not None and current == first_indent:
+                return
             pf.first_line_indent = first_indent
     else:
         pf.first_line_indent = Cm(0)
@@ -414,7 +427,15 @@ def format_document(doc, config):
 
         else:
             style_name = paragraph.style.name if paragraph.style else ""
-            if "Bullet" in style_name or "List" in style_name:
+
+            # 检查是否是 List 段落（样式名或 XML 中有 ilvl/numPr 残留）
+            pPr = paragraph._element.find(qn('w:pPr'))
+            is_list = ("Bullet" in style_name or "List" in style_name
+                       or (pPr is not None and (
+                           pPr.find(qn('w:numPr')) is not None
+                           or (pPr.find(qn('w:ilvl')) is not None))))
+
+            if is_list:
                 # List 段落：转为 Normal 样式，消除项目符号
                 paragraph.style = doc.styles['Normal']
 
@@ -428,18 +449,27 @@ def format_document(doc, config):
                 if pPr is not None:
                     ind = pPr.find(qn('w:ind'))
                     if ind is not None:
-                        # 清除 firstLineChars
                         if ind.get(qn('w:firstLineChars')) is not None:
                             del ind.attrib[qn('w:firstLineChars')]
-                        # 清除 firstLine
                         if ind.get(qn('w:firstLine')) is not None:
                             del ind.attrib[qn('w:firstLine')]
-                    # 删除 numPr
                     numPr = pPr.find(qn('w:numPr'))
                     if numPr is not None:
                         pPr.remove(numPr)
+                summary["body"] += 1
+                continue  # 跳过后续处理，避免正文分支覆盖缩进
             else:
-                format_paragraph(paragraph, config["body"])
+                # 检查是否曾被清除过缩进（无 firstLineChars 且无 firstLine）
+                # 如果是，说明是已处理过的 List Bullet，不加缩进
+                pPr_check = paragraph._element.find(qn('w:pPr'))
+                ind_check = pPr_check.find(qn('w:ind')) if pPr_check is not None else None
+                already_cleared = (ind_check is not None
+                                   and ind_check.get(qn('w:firstLineChars')) is None
+                                   and (ind_check.get(qn('w:firstLine')) is None
+                                        or ind_check.get(qn('w:firstLine')) == '0'))
+
+                if not already_cleared:
+                    format_paragraph(paragraph, config["body"])
             summary["body"] += 1
 
     # 格式化表格
