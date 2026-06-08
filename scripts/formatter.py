@@ -9,7 +9,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 
-def set_run_font(run, font_cn, font_en, size, bold=False):
+def set_run_font(run, font_cn, font_en, size, bold=False, ascii_use_cn=False):
     """设置 run 的字体（中英文分别设置）
 
     Args:
@@ -18,6 +18,7 @@ def set_run_font(run, font_cn, font_en, size, bold=False):
         font_en: 英文字体名
         size: Pt 字号对象
         bold: 是否加粗
+        ascii_use_cn: 标题模式，数字和英文也使用中文字体（避免标题数字突兀）
     """
     run.font.name = font_en
     run.font.size = size
@@ -36,8 +37,36 @@ def set_run_font(run, font_cn, font_en, size, bold=False):
         rPr.insert(0, rFonts)
 
     rFonts.set(qn('w:eastAsia'), font_cn)
-    rFonts.set(qn('w:ascii'), font_en)
-    rFonts.set(qn('w:hAnsi'), font_en)
+    if ascii_use_cn:
+        # 标题模式：数字和英文也跟中文字体，避免"1.1"、"1.2.1"等编号突兀
+        rFonts.set(qn('w:ascii'), font_cn)
+        rFonts.set(qn('w:hAnsi'), font_cn)
+    else:
+        rFonts.set(qn('w:ascii'), font_en)
+        rFonts.set(qn('w:hAnsi'), font_en)
+
+
+def _set_spacing(paragraph, attr, value):
+    """设置段前/段后间距，支持 "1line" 格式（Word原生段前行数）"""
+    pPr = paragraph._element.find(qn('w:pPr'))
+    if pPr is None:
+        pPr = paragraph._element.makeelement(qn('w:pPr'), {})
+        paragraph._element.insert(0, pPr)
+
+    spacing = pPr.find(qn('w:spacing'))
+    if spacing is None:
+        spacing = pPr.makeelement(qn('w:spacing'), {})
+        pPr.append(spacing)
+
+    if isinstance(value, str) and value.endswith('line'):
+        lines = int(value.replace('line', ''))
+        spacing.set(qn(f'w:{attr}Lines'), str(lines * 100))
+        # 清除旧的绝对间距，避免和 beforeLines 冲突
+        old_attr = qn(f'w:{attr}')
+        if old_attr in spacing.attrib:
+            del spacing.attrib[old_attr]
+    elif value:
+        spacing.set(qn(f'w:{attr}'), str(Pt(value).emu))
 
 
 def set_paragraph_format(paragraph, config):
@@ -48,10 +77,33 @@ def set_paragraph_format(paragraph, config):
         config: 段落配置字典
     """
     pf = paragraph.paragraph_format
-    pf.space_before = config.get("space_before", Pt(0))
-    pf.space_after = config.get("space_after", Pt(0))
+
+    # 段前/段后间距：支持 "1line" 格式
+    sb = config.get("space_before", 0)
+    sa = config.get("space_after", 0)
+    if isinstance(sb, str) and sb.endswith('line'):
+        _set_spacing(paragraph, 'before', sb)
+    else:
+        pf.space_before = Pt(sb) if sb else Pt(0)
+
+    if isinstance(sa, str) and sa.endswith('line'):
+        _set_spacing(paragraph, 'after', sa)
+    else:
+        pf.space_after = Pt(sa) if sa else Pt(0)
+
     pf.line_spacing = config.get("line_spacing", Pt(24))
-    pf.alignment = config.get("alignment", WD_ALIGN_PARAGRAPH.JUSTIFY)
+
+    # 对齐方式：支持字符串和 WD_ALIGN_PARAGRAPH 枚举
+    align = config.get("alignment", WD_ALIGN_PARAGRAPH.JUSTIFY)
+    ALIGN_MAP = {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+    if isinstance(align, str):
+        align = ALIGN_MAP.get(align.lower(), WD_ALIGN_PARAGRAPH.JUSTIFY)
+    pf.alignment = align
 
     first_indent = config.get("first_line_indent")
     if first_indent is not None:
@@ -98,6 +150,9 @@ def format_paragraph(paragraph, config):
     """
     set_paragraph_format(paragraph, config)
 
+    # 标题段落：数字也使用中文字体，避免编号突兀
+    ascii_cn = config.get("ascii_use_cn", False)
+
     for run in paragraph.runs:
         set_run_font(
             run,
@@ -105,6 +160,7 @@ def format_paragraph(paragraph, config):
             config["font_en"],
             config["size"],
             config.get("bold", False),
+            ascii_use_cn=ascii_cn,
         )
 
 
@@ -202,26 +258,46 @@ def is_heading(text, level):
 
 
 def is_figure_caption(text):
-    """判断是否是图题"""
+    """判断是否是图题
+
+    图题特征：以"图X"开头 + 内容简短（通常不超过50字）。
+    区分于"图X传递了三个关键信息..."这类分析段落。
+    """
+    text = text.strip()
     patterns = [
         r'^图\s*\d+',
         r'^Figure\s*\d+',
         r'^Fig\.\s*\d+',
     ]
     for pattern in patterns:
-        if re.match(pattern, text.strip()):
+        if re.match(pattern, text):
+            # 图题都很短，长段落是分析文字
+            if len(text) > 60:
+                return False
+            # 排除以句号、逗号结尾的分析句（如图X传递了...）
+            if any(kw in text for kw in ['传递', '展示', '给出', '显示', '汇总', '比较', '说明', '表明', '反映']):
+                return False
             return True
     return False
 
 
 def is_table_caption(text):
-    """判断是否是表题"""
+    """判断是否是表题
+
+    表题特征：以"表X"开头 + 内容简短（通常不超过40字）。
+    区分于"表X给出了..."这类分析段落。
+    """
+    text = text.strip()
     patterns = [
         r'^表\s*\d+',
         r'^Table\s*\d+',
     ]
     for pattern in patterns:
-        if re.match(pattern, text.strip()):
+        if re.match(pattern, text):
+            if len(text) > 50:
+                return False
+            if any(kw in text for kw in ['给出', '展示', '显示', '汇总', '说明', '可见', '表明', '仅提供']):
+                return False
             return True
     return False
 
@@ -282,6 +358,11 @@ def detect_section_type(paragraph, text, in_references):
     if style_level > 0:
         return f"heading{style_level}"
 
+    # 回退：通过文本模式检测标题（适用于直接格式化的文档）
+    for level in range(4, 0, -1):  # 从高级到低级，避免误判
+        if is_heading(text, level):
+            return f"heading{level}"
+
     # 参考文献区域
     if in_references and is_reference(text):
         return "reference"
@@ -295,11 +376,6 @@ def detect_section_type(paragraph, text, in_references):
     # 摘要标题
     if "摘要" in text and len(text) < 10:
         return "abstract_title"
-
-    # 不对 Normal 样式做文本模式标题检测（避免误判编号列表为标题）
-
-    # 摘要内容（在摘要标题之后，遇到下一个标题之前）
-    # 这个需要上下文判断，由调用方处理
 
     return "body"
 
@@ -360,6 +436,12 @@ def format_document(doc, config):
 
         # 检测是否进入参考文献部分
         style_level = detect_heading_by_style(paragraph)
+        # 回退：文本模式检测（适用于直接格式化的文档）
+        if style_level == 0:
+            for lv in range(4, 0, -1):
+                if is_heading(text, lv):
+                    style_level = lv
+                    break
         if style_level == 1 and "参考文献" in text:
             in_references = True
             in_abstract = False

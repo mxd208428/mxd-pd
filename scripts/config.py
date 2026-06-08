@@ -242,9 +242,9 @@ def resolve_config(raw_config):
             elif key == "alignment":
                 section_resolved[key] = ALIGNMENT_MAP.get(val, WD_ALIGN_PARAGRAPH.JUSTIFY)
             elif key in ("line_spacing", "space_before", "space_after", "first_line_indent"):
-                # 支持 "2char" 格式（首行缩进按字符数自动计算）
-                if isinstance(val, str) and val.endswith("char"):
-                    section_resolved[key] = val  # 保持字符串，由 formatter 处理
+                # 支持 "2char" / "1line" 格式（保持字符串，由 formatter 处理）
+                if isinstance(val, str) and (val.endswith("char") or val.endswith("line")):
+                    section_resolved[key] = val
                 else:
                     section_resolved[key] = Pt(val) if val else Pt(0)
             else:
