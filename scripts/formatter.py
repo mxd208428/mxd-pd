@@ -59,8 +59,8 @@ def _set_spacing(paragraph, attr, value):
         pPr.append(spacing)
 
     if isinstance(value, str) and value.endswith('line'):
-        lines = int(value.replace('line', ''))
-        spacing.set(qn(f'w:{attr}Lines'), str(lines * 100))
+        lines = float(value.replace('line', ''))
+        spacing.set(qn(f'w:{attr}Lines'), str(int(lines * 100)))
         # 清除旧的绝对间距，避免和 beforeLines 冲突
         old_attr = qn(f'w:{attr}')
         if old_attr in spacing.attrib:
